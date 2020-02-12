@@ -70,7 +70,11 @@ class InvertedIndex:
 
         # Remove punctuation from the text.
         clean_text = re.sub(r'[^\w\s]', '', document['text'])
-        terms = clean_text.split(' ')
+        # # If English
+        # terms = clean_text.split(' ')
+        # If Chinese
+        terms = [t for t in clean_text]
+        print(terms)
         appearances_dict = dict()
         # Dictionary with each term and the frequency it appears in the text.
         for term in terms:
@@ -101,9 +105,15 @@ def highlight_term(id, term, text):
     return "--- document {id}: {replaced}".format(id=id, replaced=replaced_text)
 
 
+def input_from_file(path):
+    file_object = open(path, 'r', encoding='UTF-8')
+    return file_object
+
+
 if __name__ == '__main__':
     db = Database()
     index = InvertedIndex(db)
+    file = input_from_file()
     document1 = {
         'id': '1',
         'text': 'The big sharks of Belgium drink beer.'

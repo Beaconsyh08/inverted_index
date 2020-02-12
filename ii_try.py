@@ -1,4 +1,6 @@
 import re
+import time
+from tqdm import tqdm
 
 
 class Appearance:
@@ -70,11 +72,10 @@ class InvertedIndex:
 
         # Remove punctuation from the text.
         clean_text = re.sub(r'[^\w\s]', '', document['text'])
-        # # If English
-        # terms = clean_text.split(' ')
-        # If Chinese
-        terms = [t for t in clean_text]
-        print(terms)
+        # If English
+        terms = clean_text.split(' ')
+        # # If Chinese
+        # terms = [t for t in clean_text]
         appearances_dict = dict()
         # Dictionary with each term and the frequency it appears in the text.
         for term in terms:
@@ -110,20 +111,31 @@ def input_from_file(path):
     return file_object
 
 
+class Document:
+    def __init__(self, doc_id, doc_txt):
+        self.doc_id = id
+        self.doc_txt = doc_txt
+
+    def __repr__(self):
+        """
+        String representation of the Appearance object
+        """
+        return str(self.__dict__)
+
+
 if __name__ == '__main__':
     db = Database()
     index = InvertedIndex(db)
-    file = input_from_file()
-    document1 = {
-        'id': '1',
-        'text': 'The big sharks of Belgium drink beer.'
-    }
-    document2 = {
-        'id': '2',
-        'text': 'Belgium has great beer. They drink beer all the time.'
-    }
-    index.index_document(document1)
-    index.index_document(document2)
+    file = input_from_file("poem.txt")
+    with tqdm(total=136362) as pbar:
+        for line_number, line in enumerate(file):
+            document = {
+                'id': line_number,
+                'text': line.strip()
+            }
+            index.index_document(document)
+            pbar.update(1)
+    file.close()
 
     while True:
         search_term = input("Enter term(s) to search: ")

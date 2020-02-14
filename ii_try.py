@@ -132,12 +132,14 @@ def input_from_file(path):
     return file_object
 
 
-def delimiter_processor(query, result):
+def delimiter_processor(query, result, index):
     # “@” means "or"
     # TODO Could consider about more complicated logic, and or together or with parentheses
 
     doc_ids = []
+    frequency_counts = []
     for values in result.values():
+        frequency_counts.append(len(values))
         for apperance in values:
             doc_ids.append(apperance.doc_id)
 
@@ -156,9 +158,12 @@ def delimiter_processor(query, result):
         # print(result_ids)
     else:
         result_ids = list(set(doc_ids))
+        list.sort(result_ids)
 
     # TODO: RANKING HERE
 
+
+    document_ranking(result_ids, frequency_counts, result, index)
     for result_id in result_ids:
         document = db.get(result_id)
         # print(list(result.keys()))
@@ -167,8 +172,28 @@ def delimiter_processor(query, result):
 
 
 # TODO: return by length or threshold limit
-def document_ranking():
-    return 0
+def document_ranking(result_ids, frequency_counts, result, index):
+    # tf-idf: wd,t = fd,t and 𝑤q,t = N/ft
+    wql_lst = []
+    for frequency in frequency_counts:
+        # 𝑤q,t = N/ft
+        wqt = len(result_ids) / frequency
+
+    term_no = len(result.values())
+    doc_no = len(result_ids)
+    fre_lsts = [[0 for j in range(term_no)] for i in range(doc_no)]
+
+    for term_pos, values in enumerate(result.values()):
+        for apperance in values:
+            for doc_pos in range(len(result_ids)):
+                if apperance.doc_id == result_ids[doc_pos]:
+                    fre_lsts[doc_pos][term_pos] = apperance.frequency
+
+    print("final_fre_lst", fre_lsts)
+
+    """
+    一&春&雨
+    """
 
 
 def poem_file_processor(file):
@@ -180,8 +205,8 @@ def poem_file_processor(file):
             }
 
             # For testing
-            if line_number == 1000:
-                break
+            # if line_number == 100:
+            #     break
 
             index.index_document(document)
             p_bar.update(1)
@@ -199,6 +224,6 @@ if __name__ == '__main__':
         result = index.lookup_query(search_term)
 
         if result:
-            delimiter_processor(search_term, result)
+            delimiter_processor(search_term, result, index)
         else:
             print("\033[1;31;40mNO MATCH\033[0m")

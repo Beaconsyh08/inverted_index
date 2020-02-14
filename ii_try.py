@@ -1,6 +1,7 @@
 import re
 import time
 from tqdm import tqdm
+from functools import reduce
 
 
 class Appearance:
@@ -72,10 +73,23 @@ class InvertedIndex:
 
         # Remove punctuation from the text.
         clean_text = re.sub(r'[^\w\s]', '', document['text'])
-        # If English
-        terms = clean_text.split(' ')
-        # # If Chinese
-        # terms = [t for t in clean_text]
+        # # If English
+        # terms = clean_text.split(' ')
+        # If Chinese
+        terms = [t for t in clean_text]
+
+        # 2-gram terms+
+        two_gram_terms = []
+        print(terms)
+        for index, term in enumerate(terms):
+            if index % 5 == 4:
+                continue
+            else:
+                two_gram_terms.append("".join(terms[index:index + 2]))
+        terms += two_gram_terms
+        terms[:] = (value for value in terms if value != "")
+
+        print(terms)
         appearances_dict = dict()
         # Dictionary with each term and the frequency it appears in the text.
         for term in terms:
@@ -97,13 +111,20 @@ class InvertedIndex:
         This is a very naive search since it will just split the terms and show
         the documents where they appear.
         """
-        return {term: self.index[term] for term in query.split(' ') if term in self.index}
+        # all_terms = re.findall(r"[\w']+", query)
+        terms = re.findall(r"[\w']+", query)
+        # delimiter = list(set([t for t in query]) - set(terms))
+        # print("delimiter:", delimiter)
+
+        return {term: self.index[term] for term in terms if term in self.index}
 
 
-def highlight_term(id, term, text):
+def highlight_term(id, terms, text):
     # Highlight color "\033[0m" --> reset all
-    replaced_text = text.replace(term, "\033[1;32;40m {term} \033[0m".format(term=term))
-    return "--- document {id}: {replaced}".format(id=id, replaced=replaced_text)
+
+    for term in terms:
+        text = text.replace(term, "\033[1;32;40m{term}\033[0m".format(term=term))
+    return "--- document {id}: {replaced}".format(id=id, replaced=text)
 
 
 def input_from_file(path):
@@ -123,30 +144,73 @@ class Document:
         return str(self.__dict__)
 
 
+def delimiter_processor(query, result):
+    # “@” means "or"
+    # TODO Could consider about more complicated logic, and or together or with parentheses
+
+    doc_ids = []
+    for values in result.values():
+        for apperance in values:
+            doc_ids.append(apperance.doc_id)
+
+    if "&" in query:
+        intersection_ids_count = {}
+        intersection_ids = []
+        for id in doc_ids:
+            # appearance times equal to length of query terms
+            intersection_ids_count[id] = doc_ids.count(id)
+
+        print(intersection_ids_count)
+        for item in intersection_ids_count:
+            if intersection_ids_count[item] == len(result.values()):
+                intersection_ids.append(item)
+                print(intersection_ids)
+
+        print(intersection_ids)
+
+        for inter_id in intersection_ids:
+            document = db.get(inter_id)
+            print(list(result.keys()))
+            print(highlight_term(inter_id, list(result.keys()), document['text']))
+        print("-----------------------------")
+
+    else:
+        for union_id in set(doc_ids):
+            document = db.get(union_id)
+            print(list(result.keys()))
+            print(highlight_term(union_id, list(result.keys()), document['text']))
+        print("-----------------------------")
+
+
+# TODO return by length or threshold limit
+def document_ranking():
+    return 0
+
+
 if __name__ == '__main__':
     db = Database()
     index = InvertedIndex(db)
     file = input_from_file("poem.txt")
-    with tqdm(total=136362) as pbar:
+    with tqdm(total=136362) as p_bar:
         for line_number, line in enumerate(file):
             document = {
                 'id': line_number,
-                'text': line.strip()
+                'text': line.strip().replace(" ", "")
             }
+
+            # For testing
+            if line_number == 1000:
+                break
+
             index.index_document(document)
-            pbar.update(1)
+            p_bar.update(1)
     file.close()
 
     while True:
-        search_term = input("Enter term(s) to search: ")
+        search_term = input("Enter term(s) to search (Delimiter: \033[1;31mAND-\"&\", OR-\"@\"\033[0m):")
         result = index.lookup_query(search_term)
 
         if result:
-            for term in result.keys():
-                for appearance in result[term]:
-                    # print(appearance)
-                    document = db.get(appearance.doc_id)
-                    print(highlight_term(appearance.doc_id, term, document['text']))
-                print("-----------------------------")
+            delimiter_processor(search_term, result)
         else:
             print("\033[1;31;40m NO MATCH \033[0m")

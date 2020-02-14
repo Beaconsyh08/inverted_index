@@ -80,7 +80,7 @@ class InvertedIndex:
 
         # 2-gram terms+
         two_gram_terms = []
-        print(terms)
+        # print(terms)
         for index, term in enumerate(terms):
             if index % 5 == 4:
                 continue
@@ -89,7 +89,7 @@ class InvertedIndex:
         terms += two_gram_terms
         terms[:] = (value for value in terms if value != "")
 
-        print(terms)
+        # print(terms)
         appearances_dict = dict()
         # Dictionary with each term and the frequency it appears in the text.
         for term in terms:
@@ -132,18 +132,6 @@ def input_from_file(path):
     return file_object
 
 
-class Document:
-    def __init__(self, doc_id, doc_txt):
-        self.doc_id = id
-        self.doc_txt = doc_txt
-
-    def __repr__(self):
-        """
-        String representation of the Appearance object
-        """
-        return str(self.__dict__)
-
-
 def delimiter_processor(query, result):
     # “@” means "or"
     # TODO Could consider about more complicated logic, and or together or with parentheses
@@ -155,7 +143,7 @@ def delimiter_processor(query, result):
 
     if "&" in query:
         intersection_ids_count = {}
-        intersection_ids = []
+        result_ids = []
         for id in doc_ids:
             # appearance times equal to length of query terms
             intersection_ids_count[id] = doc_ids.count(id)
@@ -163,34 +151,27 @@ def delimiter_processor(query, result):
         print(intersection_ids_count)
         for item in intersection_ids_count:
             if intersection_ids_count[item] == len(result.values()):
-                intersection_ids.append(item)
-                print(intersection_ids)
+                result_ids.append(item)
 
-        print(intersection_ids)
-
-        for inter_id in intersection_ids:
-            document = db.get(inter_id)
-            print(list(result.keys()))
-            print(highlight_term(inter_id, list(result.keys()), document['text']))
-        print("-----------------------------")
-
+        # print(result_ids)
     else:
-        for union_id in set(doc_ids):
-            document = db.get(union_id)
-            print(list(result.keys()))
-            print(highlight_term(union_id, list(result.keys()), document['text']))
-        print("-----------------------------")
+        result_ids = list(set(doc_ids))
+
+    # TODO: RANKING HERE
+
+    for result_id in result_ids:
+        document = db.get(result_id)
+        # print(list(result.keys()))
+        print(highlight_term(result_id, list(result.keys()), document['text']))
+    print("-----------------------------")
 
 
-# TODO return by length or threshold limit
+# TODO: return by length or threshold limit
 def document_ranking():
     return 0
 
 
-if __name__ == '__main__':
-    db = Database()
-    index = InvertedIndex(db)
-    file = input_from_file("poem.txt")
+def poem_file_processor(file):
     with tqdm(total=136362) as p_bar:
         for line_number, line in enumerate(file):
             document = {
@@ -206,6 +187,13 @@ if __name__ == '__main__':
             p_bar.update(1)
     file.close()
 
+
+if __name__ == '__main__':
+    db = Database()
+    index = InvertedIndex(db)
+    poem_file = input_from_file("poem.txt")
+    poem_file_processor(poem_file)
+
     while True:
         search_term = input("Enter term(s) to search (Delimiter: \033[1;31mAND-\"&\", OR-\"@\"\033[0m):")
         result = index.lookup_query(search_term)
@@ -213,4 +201,4 @@ if __name__ == '__main__':
         if result:
             delimiter_processor(search_term, result)
         else:
-            print("\033[1;31;40m NO MATCH \033[0m")
+            print("\033[1;31;40mNO MATCH\033[0m")

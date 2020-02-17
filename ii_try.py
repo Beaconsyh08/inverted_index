@@ -2,6 +2,9 @@ import re
 import time
 from tqdm import tqdm
 from functools import reduce
+import numpy as np
+from scipy.spatial.distance import cosine
+import math
 
 
 class Appearance:
@@ -132,7 +135,7 @@ def input_from_file(path):
     return file_object
 
 
-def delimiter_processor(query, result, index):
+def delimiter_processor(query, result, index, total_poem):
     # “@” means "or"
     # TODO Could consider about more complicated logic, and or together or with parentheses
 
@@ -150,7 +153,7 @@ def delimiter_processor(query, result, index):
             # appearance times equal to length of query terms
             intersection_ids_count[id] = doc_ids.count(id)
 
-        print(intersection_ids_count)
+        # print(intersection_ids_count)
         for item in intersection_ids_count:
             if intersection_ids_count[item] == len(result.values()):
                 result_ids.append(item)
@@ -162,8 +165,7 @@ def delimiter_processor(query, result, index):
 
     # TODO: RANKING HERE
 
-
-    document_ranking(result_ids, frequency_counts, result, index)
+    result_ids = document_ranking(result_ids, frequency_counts, result, index, total_poem)
     for result_id in result_ids:
         document = db.get(result_id)
         # print(list(result.keys()))
@@ -172,12 +174,20 @@ def delimiter_processor(query, result, index):
 
 
 # TODO: return by length or threshold limit
-def document_ranking(result_ids, frequency_counts, result, index):
+def document_ranking(result_ids, frequency_counts, result, index, total_poem):
     # tf-idf: wd,t = fd,t and 𝑤q,t = N/ft
+    # wd,t = 1 + log2 fd,t and wq,t = log2(1+N/ft)
+
     wql_lst = []
+    print(frequency_counts)
     for frequency in frequency_counts:
         # 𝑤q,t = N/ft
-        wqt = len(result_ids) / frequency
+        wqt = 136362 / frequency
+        wql_lst.append(wqt)
+
+        # wqt_log = math.log2(1+(total_poem / frequency))
+        # wql_lst.append(wqt_log)
+    print(wql_lst)
 
     term_no = len(result.values())
     doc_no = len(result_ids)
@@ -188,6 +198,8 @@ def document_ranking(result_ids, frequency_counts, result, index):
             for doc_pos in range(len(result_ids)):
                 if apperance.doc_id == result_ids[doc_pos]:
                     fre_lsts[doc_pos][term_pos] = apperance.frequency
+                    # # log
+                    # fre_lsts[doc_pos][term_pos] = 1 + math.log2(apperance.frequency)
 
     print("final_fre_lst", fre_lsts)
 
@@ -195,9 +207,32 @@ def document_ranking(result_ids, frequency_counts, result, index):
     一&春&雨
     """
 
+    # wql_array = np.array(wql_lst)
+    # cos_dis_lst = []
+    # for doc_fre in fre_lsts:
+    #     fre_array = np.array(doc_fre)
+    #     cos_dis = cosine(fre_array, wql_array)
+    #     cos_dis_lst.append(cos_dis)
+    # cos_id_lst = list(sorted(zip(cos_dis_lst, result_ids)))
+    # print(list(zip(*cos_id_lst)))
+    # return list(list(zip(*cos_id_lst))[1])
+
+    # using dot multiplication --> just calculate by frequency
+    dot_lst = []
+    for doc_fre in fre_lsts:
+        dot = np.dot(doc_fre, wql_lst)
+        dot_lst.append(dot)
+    dot_id_lst = list(sorted(zip(dot_lst, result_ids),reverse=True))
+    print(list(zip(*dot_id_lst)))
+    return list(list(zip(*dot_id_lst))[1])
+
+
+# def document_ranking_frequence(result_ids, frequency_counts, result, index, total_poem):
+
 
 def poem_file_processor(file):
-    with tqdm(total=136362) as p_bar:
+    total_poem = 20000
+    with tqdm(total=total_poem) as p_bar:
         for line_number, line in enumerate(file):
             document = {
                 'id': line_number,
@@ -205,25 +240,26 @@ def poem_file_processor(file):
             }
 
             # For testing
-            # if line_number == 100:
-            #     break
+            if line_number == total_poem:
+                break
 
             index.index_document(document)
             p_bar.update(1)
     file.close()
+    return total_poem
 
 
 if __name__ == '__main__':
     db = Database()
     index = InvertedIndex(db)
     poem_file = input_from_file("poem.txt")
-    poem_file_processor(poem_file)
+    total_poem = poem_file_processor(poem_file)
 
     while True:
         search_term = input("Enter term(s) to search (Delimiter: \033[1;31mAND-\"&\", OR-\"@\"\033[0m):")
         result = index.lookup_query(search_term)
 
         if result:
-            delimiter_processor(search_term, result, index)
+            delimiter_processor(search_term, result, index, total_poem)
         else:
             print("\033[1;31;40mNO MATCH\033[0m")

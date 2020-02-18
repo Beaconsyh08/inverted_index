@@ -183,7 +183,6 @@ def json_file_processor(index, total_poem, conn, conversion_dict):
                 if poem_result:
                     data['keywords'], data['poem'] = delimiter_processor(keyword_to_search, poem_result, index,
                                                                          total_poem, False, marked_id)
-                    # TODO
                     row = (count, data['log_id'], data['image'], data['result_num'], str(data['result']),
                            str(data['keywords']), data['poem'], 3)
                     # cursor.execute('INSERT INTO I2P VALUES (?,?,?,?,?,?,?,?)', row)
@@ -230,8 +229,6 @@ def delimiter_processor(query, result, index, total_poem, isCMD, marked_id):
     else:
         result_ids = list(set(doc_ids))
         list.sort(result_ids)
-
-    # TODO: RANKING HERE
 
     result_ids = document_ranking(result_ids, frequency_counts, result, index, total_poem)
     search_keyword = list(result.keys())
@@ -312,6 +309,13 @@ def document_ranking(result_ids, frequency_counts, result, index, total_poem):
     doc_no = len(result_ids)
     fre_lst = [[0 for j in range(term_no)] for i in range(doc_no)]
 
+    #################################################################################
+    #################################################################################
+    #################################################################################
+    #################################################################################
+    #################################################################################
+
+    # TODO: TRIPLE FOR LOOPS
     for term_pos, values in enumerate(result.values()):
         for appearance in values:
             for doc_pos in range(len(result_ids)):
@@ -319,6 +323,12 @@ def document_ranking(result_ids, frequency_counts, result, index, total_poem):
                     fre_lst[doc_pos][term_pos] = appearance.frequency
                     # # log
                     # fre_lst[doc_pos][term_pos] = 1 + math.log2(appearance.frequency)
+
+    #################################################################################
+    #################################################################################
+    #################################################################################
+    #################################################################################
+    #################################################################################
 
     # wql_array = np.array(wql_lst)
     # cos_dis_lst = []

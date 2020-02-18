@@ -8,6 +8,7 @@ import math
 import json
 import jieba.analyse
 import sqlite3
+import xlrd
 
 
 class Appearance:
@@ -19,6 +20,7 @@ class Appearance:
     def __init__(self, doc_id, frequency):
         self.doc_id = doc_id
         self.frequency = frequency
+        self.flag = 0
 
     def __repr__(self):
         """
@@ -142,11 +144,12 @@ def input_from_file(path):
     return file_object
 
 
-def json_file_processor(index, total_poem, conn):
+def json_file_processor(index, total_poem, conn, conversion_dict):
     with open('sample.json') as json_file:
         datas = json.load(json_file)
         count = 0
         cursor = conn.cursor()
+        marked_id = set()
         for data in datas:
             keywords = []
             count += 1
@@ -161,15 +164,30 @@ def json_file_processor(index, total_poem, conn):
                         keywords += tf_idf_res
                     else:
                         continue
+
+                # Dictionary conversion
+                for kw_no, kw in enumerate(keywords):
+                    if kw in conversion_dict:
+                        new_keyword = conversion_dict.get(kw)
+                        if "|" in new_keyword:
+                            new_keywords = new_keyword.split("|")
+                            keywords.remove(kw)
+                            for new_kw in new_keywords:
+                                keywords.append(new_kw)
+                        else:
+                            keywords[kw_no] = new_keyword
+
+
                 keyword_to_search = "@".join(keywords)
                 poem_result = index.lookup_query(keyword_to_search)
                 if poem_result:
                     data['keywords'], data['poem'] = delimiter_processor(keyword_to_search, poem_result, index,
-                                                                         total_poem, False)
+                                                                         total_poem, False, marked_id)
                     # TODO
                     row = (count, data['log_id'], data['image'], data['result_num'], str(data['result']),
                            str(data['keywords']), data['poem'], 3)
-                    cursor.execute('INSERT INTO I2P VALUES (?,?,?,?,?,?,?,?)', row)
+                    # cursor.execute('INSERT INTO I2P VALUES (?,?,?,?,?,?,?,?)', row)
+                    cursor.execute('INSERT INTO I2P_CON VALUES (?,?,?,?,?,?,?,?)', row)
 
                 else:
                     print("\033[1;31;40mNO MATCH\033[0m")
@@ -181,7 +199,7 @@ def json_file_processor(index, total_poem, conn):
                 conn.commit()
 
 
-def delimiter_processor(query, result, index, total_poem, isCMD):
+def delimiter_processor(query, result, index, total_poem, isCMD, marked_id):
     """
     Using different logic to process the different delimiter: AND / OR
     """
@@ -222,18 +240,54 @@ def delimiter_processor(query, result, index, total_poem, isCMD):
         print("\033[1;31;40mNO MATCH\033[0m")
     else:
         if isCMD:
-            for result_id in result_ids:
-                document = db.get(result_id)
-                # print(list(result.keys()))
-                # print(list(result.keys()))
+            # for result_id in result_ids:
+            #     document = db.get(result_id)
+            #     # print(list(result.keys()))
+            #     # print(list(result.keys()))
+            #     poem = document['text']
+            #     print(highlight_term(result_id, list(result.keys()), document['text']))
+            # print("-----------------------------")
+            document = "None"
+            select_count = 0
+            while document is "None":
+                if select_count == len(result_ids):
+                    top1_id = "None"
+                    break
+                else:
+                    top1_id = result_ids[select_count]
+                    if top1_id not in marked_id:
+                        document = db.get(top1_id)
+                        break
+                    select_count += 1
+                print(top1_id, document)
+            if top1_id is "None":
+                poem = "NO MATCH"
+                print("\033[1;31;40mNO MATCH\033[0m")
+            else:
                 poem = document['text']
-                print(highlight_term(result_id, list(result.keys()), document['text']))
-            print("-----------------------------")
+                marked_id.add(top1_id)
+                print(highlight_term(top1_id, list(result.keys()), document['text']))
         else:
-            top1_id = result_ids[0]
-            document = db.get(top1_id)
-            poem = document['text']
-            print(highlight_term(top1_id, list(result.keys()), document['text']))
+            document = "None"
+            select_count = 0
+            while document is "None":
+                if select_count == len(result_ids):
+                    top1_id = "None"
+                    break
+                else:
+                    top1_id = result_ids[select_count]
+                    if top1_id not in marked_id:
+                        document = db.get(top1_id)
+                        break
+                    select_count += 1
+                print(top1_id, document)
+            if top1_id is "None":
+                poem = "NO MATCH"
+                print("\033[1;31;40mNO MATCH\033[0m")
+            else:
+                poem = document['text']
+                marked_id.add(top1_id)
+                print(highlight_term(top1_id, list(result.keys()), document['text']))
     return search_keyword, poem
 
 
@@ -315,9 +369,20 @@ def poem_file_processor(file):
     return total_poem
 
 
+def dict_constructor(path):
+    wb = xlrd.open_workbook(path)
+    sheet = wb.sheet_by_index(2)
+    conversion_dict = {}
+
+    for i in range(sheet.nrows):
+        conversion_dict[sheet.cell_value(i, 0)] = sheet.cell_value(i, 1)
+    return conversion_dict
+
+
 if __name__ == '__main__':
     db = Database()
     index = InvertedIndex(db)
+    conversion_dict = dict_constructor("img2poem.xlsx")
     total_poem = poem_file_processor(input_from_file("poem.txt"))
     conn = sqlite3.connect('IMG_2_POEM.db')
 
@@ -330,5 +395,5 @@ if __name__ == '__main__':
     #     else:
     #         print("\033[1;31;40mNO MATCH\033[0m")
 
-    json_file_processor(index, total_poem, conn)
+    json_file_processor(index, total_poem, conn, conversion_dict)
     conn.close()

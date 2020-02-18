@@ -142,14 +142,15 @@ def input_from_file(path):
     return file_object
 
 
-def json_file_processor(index, total_poem):
+def json_file_processor(index, total_poem, conn):
     with open('sample.json') as json_file:
         datas = json.load(json_file)
+        count = 0
+        cursor = conn.cursor()
         for data in datas:
             keywords = []
+            count += 1
             try:
-                data['poem'] = "haha"
-                image = data['image']
                 for result in data['result']:
                     keyword = result['keyword']
                     score = result['score']
@@ -161,13 +162,23 @@ def json_file_processor(index, total_poem):
                     else:
                         continue
                 keyword_to_search = "@".join(keywords)
-                result = index.lookup_query(keyword_to_search)
-                if result:
-                    delimiter_processor(keyword_to_search, result, index, total_poem, False)
+                poem_result = index.lookup_query(keyword_to_search)
+                if poem_result:
+                    data['keywords'], data['poem'] = delimiter_processor(keyword_to_search, poem_result, index,
+                                                                         total_poem, False)
+                    # TODO
+                    row = (count, data['log_id'], data['image'], data['result_num'], str(data['result']),
+                           str(data['keywords']), data['poem'], 3)
+                    cursor.execute('INSERT INTO I2P VALUES (?,?,?,?,?,?,?,?)', row)
+
                 else:
                     print("\033[1;31;40mNO MATCH\033[0m")
+
             except:
                 continue
+
+            if count % 100 == 0:
+                conn.commit()
 
 
 def delimiter_processor(query, result, index, total_poem, isCMD):
@@ -205,7 +216,9 @@ def delimiter_processor(query, result, index, total_poem, isCMD):
     # TODO: RANKING HERE
 
     result_ids = document_ranking(result_ids, frequency_counts, result, index, total_poem)
+    search_keyword = list(result.keys())
     if result_ids == "NO MATCH":
+        poem = "NO MATCH"
         print("\033[1;31;40mNO MATCH\033[0m")
     else:
         if isCMD:
@@ -213,12 +226,15 @@ def delimiter_processor(query, result, index, total_poem, isCMD):
                 document = db.get(result_id)
                 # print(list(result.keys()))
                 # print(list(result.keys()))
+                poem = document['text']
                 print(highlight_term(result_id, list(result.keys()), document['text']))
             print("-----------------------------")
         else:
             top1_id = result_ids[0]
             document = db.get(top1_id)
+            poem = document['text']
             print(highlight_term(top1_id, list(result.keys()), document['text']))
+    return search_keyword, poem
 
 
 # TODO: return by length or threshold limit
@@ -231,7 +247,7 @@ def document_ranking(result_ids, frequency_counts, result, index, total_poem):
     wql_lst = []
     for frequency in frequency_counts:
         # 𝑤q,t = N/ft
-        wqt = 136362 / frequency
+        wqt = total_poem / frequency
         wql_lst.append(wqt)
 
         # wqt_log = math.log2(1+(total_poem / frequency))
@@ -304,7 +320,7 @@ if __name__ == '__main__':
     index = InvertedIndex(db)
     total_poem = poem_file_processor(input_from_file("poem.txt"))
     conn = sqlite3.connect('IMG_2_POEM.db')
-    c = conn.cursor()
+
     # while True:
     #     search_term = input("Enter term(s) to search (Delimiter: \033[1;31mAND-\"&\", OR-\"@\"\033[0m):")
     #     result = index.lookup_query(search_term)
@@ -314,4 +330,5 @@ if __name__ == '__main__':
     #     else:
     #         print("\033[1;31;40mNO MATCH\033[0m")
 
-    json_file_processor(index, total_poem)
+    json_file_processor(index, total_poem, conn)
+    conn.close()

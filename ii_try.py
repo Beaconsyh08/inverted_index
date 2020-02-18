@@ -5,6 +5,9 @@ from functools import reduce
 import numpy as np
 from scipy.spatial.distance import cosine
 import math
+import json
+import jieba.analyse
+import sqlite3
 
 
 class Appearance:
@@ -123,10 +126,14 @@ class InvertedIndex:
 
 
 def highlight_term(id, terms, text):
-    # Highlight color "\033[0m" --> reset all
+    """
+    Highlight the terms in query and inverted index dict
+    Highlight color "\033[0m" --> reset all
+    """
 
     for term in terms:
-        text = text.replace(term, "\033[1;32;40m{term}\033[0m".format(term=term))
+        text = str(text.replace(term, "\033[1;32;40m{term}\033[0m".format(term=term)))
+        # print(text)
     return "--- document {id}: {replaced}".format(id=id, replaced=text)
 
 
@@ -135,17 +142,48 @@ def input_from_file(path):
     return file_object
 
 
-def delimiter_processor(query, result, index, total_poem):
-    # “@” means "or"
+def json_file_processor(index, total_poem):
+    with open('sample.json') as json_file:
+        datas = json.load(json_file)
+        for data in datas:
+            keywords = []
+            try:
+                data['poem'] = "haha"
+                image = data['image']
+                for result in data['result']:
+                    keyword = result['keyword']
+                    score = result['score']
+                    # throw away the keyword with confidence score less than threshold --> 0.1
+                    # could change it during the following experiment
+                    if score > 0.1:
+                        tf_idf_res = jieba.cut_for_search(keyword)
+                        keywords += tf_idf_res
+                    else:
+                        continue
+                keyword_to_search = "@".join(keywords)
+                result = index.lookup_query(keyword_to_search)
+                if result:
+                    delimiter_processor(keyword_to_search, result, index, total_poem, False)
+                else:
+                    print("\033[1;31;40mNO MATCH\033[0m")
+            except:
+                continue
+
+
+def delimiter_processor(query, result, index, total_poem, isCMD):
+    """
+    Using different logic to process the different delimiter: AND / OR
+    """
     # TODO Could consider about more complicated logic, and or together or with parentheses
 
     doc_ids = []
     frequency_counts = []
     for values in result.values():
         frequency_counts.append(len(values))
-        for apperance in values:
-            doc_ids.append(apperance.doc_id)
+        for appearance in values:
+            doc_ids.append(appearance.doc_id)
 
+    # AND logic
     if "&" in query:
         intersection_ids_count = {}
         result_ids = []
@@ -159,6 +197,7 @@ def delimiter_processor(query, result, index, total_poem):
                 result_ids.append(item)
 
         # print(result_ids)
+    # OR logic
     else:
         result_ids = list(set(doc_ids))
         list.sort(result_ids)
@@ -166,20 +205,30 @@ def delimiter_processor(query, result, index, total_poem):
     # TODO: RANKING HERE
 
     result_ids = document_ranking(result_ids, frequency_counts, result, index, total_poem)
-    for result_id in result_ids:
-        document = db.get(result_id)
-        # print(list(result.keys()))
-        print(highlight_term(result_id, list(result.keys()), document['text']))
-    print("-----------------------------")
+    if result_ids == "NO MATCH":
+        print("\033[1;31;40mNO MATCH\033[0m")
+    else:
+        if isCMD:
+            for result_id in result_ids:
+                document = db.get(result_id)
+                # print(list(result.keys()))
+                # print(list(result.keys()))
+                print(highlight_term(result_id, list(result.keys()), document['text']))
+            print("-----------------------------")
+        else:
+            top1_id = result_ids[0]
+            document = db.get(top1_id)
+            print(highlight_term(top1_id, list(result.keys()), document['text']))
 
 
 # TODO: return by length or threshold limit
 def document_ranking(result_ids, frequency_counts, result, index, total_poem):
-    # tf-idf: wd,t = fd,t and 𝑤q,t = N/ft
-    # wd,t = 1 + log2 fd,t and wq,t = log2(1+N/ft)
+    """
+    Using tf-idf: wd,t = fd,t and 𝑤q,t = N/ft --> to ranking the results
+    Could also consider about wd,t = 1 + log2 fd,t and wq,t = log2(1+N/ft)
+    """
 
     wql_lst = []
-    print(frequency_counts)
     for frequency in frequency_counts:
         # 𝑤q,t = N/ft
         wqt = 136362 / frequency
@@ -191,25 +240,19 @@ def document_ranking(result_ids, frequency_counts, result, index, total_poem):
 
     term_no = len(result.values())
     doc_no = len(result_ids)
-    fre_lsts = [[0 for j in range(term_no)] for i in range(doc_no)]
+    fre_lst = [[0 for j in range(term_no)] for i in range(doc_no)]
 
     for term_pos, values in enumerate(result.values()):
-        for apperance in values:
+        for appearance in values:
             for doc_pos in range(len(result_ids)):
-                if apperance.doc_id == result_ids[doc_pos]:
-                    fre_lsts[doc_pos][term_pos] = apperance.frequency
+                if appearance.doc_id == result_ids[doc_pos]:
+                    fre_lst[doc_pos][term_pos] = appearance.frequency
                     # # log
-                    # fre_lsts[doc_pos][term_pos] = 1 + math.log2(apperance.frequency)
-
-    print("final_fre_lst", fre_lsts)
-
-    """
-    一&春&雨
-    """
+                    # fre_lst[doc_pos][term_pos] = 1 + math.log2(appearance.frequency)
 
     # wql_array = np.array(wql_lst)
     # cos_dis_lst = []
-    # for doc_fre in fre_lsts:
+    # for doc_fre in fre_lst:
     #     fre_array = np.array(doc_fre)
     #     cos_dis = cosine(fre_array, wql_array)
     #     cos_dis_lst.append(cos_dis)
@@ -219,19 +262,26 @@ def document_ranking(result_ids, frequency_counts, result, index, total_poem):
 
     # using dot multiplication --> just calculate by frequency
     dot_lst = []
-    for doc_fre in fre_lsts:
+    for doc_fre in fre_lst:
         dot = np.dot(doc_fre, wql_lst)
         dot_lst.append(dot)
-    dot_id_lst = list(sorted(zip(dot_lst, result_ids),reverse=True))
-    print(list(zip(*dot_id_lst)))
-    return list(list(zip(*dot_id_lst))[1])
 
-
-# def document_ranking_frequence(result_ids, frequency_counts, result, index, total_poem):
+    # Ordering the zip list by the dot multiplication mark
+    dot_id_lst = list(sorted(zip(dot_lst, result_ids), reverse=True))
+    # print(dot_id_lst)
+    if len(dot_lst) > 0:
+        # print(list(zip(*dot_id_lst)))
+        return list(list(zip(*dot_id_lst))[1])
+    else:
+        return "NO MATCH"
 
 
 def poem_file_processor(file):
-    total_poem = 20000
+    """
+    Inverted Index constructor with progress bar display
+    """
+    total_poem = 136362
+    # total_poem = 10000
     with tqdm(total=total_poem) as p_bar:
         for line_number, line in enumerate(file):
             document = {
@@ -252,14 +302,16 @@ def poem_file_processor(file):
 if __name__ == '__main__':
     db = Database()
     index = InvertedIndex(db)
-    poem_file = input_from_file("poem.txt")
-    total_poem = poem_file_processor(poem_file)
+    total_poem = poem_file_processor(input_from_file("poem.txt"))
+    conn = sqlite3.connect('IMG_2_POEM.db')
+    c = conn.cursor()
+    # while True:
+    #     search_term = input("Enter term(s) to search (Delimiter: \033[1;31mAND-\"&\", OR-\"@\"\033[0m):")
+    #     result = index.lookup_query(search_term)
+    #
+    #     if result:
+    #         delimiter_processor(search_term, result, index, total_poem, True)
+    #     else:
+    #         print("\033[1;31;40mNO MATCH\033[0m")
 
-    while True:
-        search_term = input("Enter term(s) to search (Delimiter: \033[1;31mAND-\"&\", OR-\"@\"\033[0m):")
-        result = index.lookup_query(search_term)
-
-        if result:
-            delimiter_processor(search_term, result, index, total_poem)
-        else:
-            print("\033[1;31;40mNO MATCH\033[0m")
+    json_file_processor(index, total_poem)
